@@ -1,0 +1,247 @@
+---
+title: "SQL Examples"
+author: "Hunter Nosek"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(DBI)
+library(tidyverse)
+```
+
+## Important Note
+
+The following problems are drawn from the textbook 'Modern Data Science with R'.
+
+## Make the Connection
+
+Here we make the connection with the airlines database in Rstudio
+
+```{r, echo = FALSE}
+con <- dbConnect(RMySQL::MySQL(),
+                 dbname = "airlines",
+                 host = "scidb.smith.edu",
+                 user = "mth292",
+                 password = "RememberPi")
+```
+
+```{sql, connection = con}
+use airlines;
+```
+
+Here we see the different tables within the `airlines` database.
+
+```{r}
+dbListTables(con)
+```
+
+
+
+```{sql, connection = con}
+describe airports;
+```
+
+```{sql, connection = con}
+describe carriers
+```
+
+Practice query to make sure connection is up and running.
+
+```{sql connection=con}
+SELECT origin AS Origin, sum(air_time) AS Total_Time
+FROM flights
+WHERE year = 2013 AND Month = 6 AND DAY = 20
+GROUP BY Origin
+```
+
+
+## Problem 1
+
+>How many domestic flights flew into Dallas-Fort Worth on May 14, 1998?
+
+The first five problems are pretty straightforward, so I'll just let the code do the talking:
+
+
+```{sql connection = con}
+SELECT sum(1) As Total
+FROM flights
+WHERE dest = "DFW" AND year = 1998 AND month = 5 AND day = 14
+```
+
+
+
+## Problem 2
+
+>Find all flights between JFK and SFO in 1994.  How many were cancelled?  What percentage of the total number of flights were cancelled?
+
+```{sql, connection = con}
+SELECT sum(1) as TotalFlights,sum(cancelled) as TotalCancelled, sum(cancelled) / sum(1) *100 as PercentageCancelled
+FROM flights
+WHERE origin = "JFK" AND dest = "SFO" AND year = 1994
+```
+
+
+
+## Problem 3
+
+>Of all the destinations from Chicago O'Hare (ORD), which were the most common in 1997?
+
+```{sql, connection = con}
+SELECT dest as Destination, sum(1) as n
+FROM flights
+WHERE year = 1997 AND origin = "ORD"
+GROUP BY dest
+ORDER BY n desc
+LIMIT 5
+```
+
+## Problem 4
+
+>Which airport had the highest average arrival delay time in 2008?
+
+```{sql, connection = con}
+SELECT dest, sum(1) as numFlights, avg(arr_delay) as MeanArrivalDelay
+FROM flights
+WHERE year = 2008
+GROUP BY dest
+ORDER BY MeanArrivalDelay desc
+LIMIT 1
+```
+
+## Problem 5
+
+>How many domestic flights came into or flew out of Bradley Airport (BDL) in 2012?
+
+```{sql, connection = con}
+SELECT sum(origin = "BDL") + sum(dest = "BDL") as Total_BDL_Flights
+FROM flights
+WHERE year = 2012 
+```
+
+## Problem 6
+
+>List the airline and flight number for all flights between LAX and JFK on September 26, 1990.
+
+The first thing I had to focus on here was to join flights with carriers, then it was pretty easy to get the airline with the flight number.
+
+```{sql, connection = con}
+SELECT c.name as Airline, f.flight as FlightNumber
+FROM flights as f
+JOIN carriers as c
+ON f.carrier = c.carrier
+where f.month = 9 and f.year = 1990 and f.day = 26 and f.origin = "LAX" and f.dest = "JFK" 
+```
+
+## Problem 7
+
+This and problems 8 and 9 use the `lahman` database.
+
+>List the names of all batters who have at least 300 home runs (HR) and 300 stolen bases (SB) in their careers and rank them by their career batting average.
+
+```{sql, connection = con}
+use lahman;
+```
+
+
+```{sql, connection = con}
+show tables;
+```
+
+```{sql, connection = con}
+SELECT *
+FROM AwardsPlayers
+WHERE yearID = 1982;
+```
+
+```{sql, connection = con}
+SELECT *
+FROM HallOfFame;
+```
+
+The first thing I focused on here was joining 'Batting' with 'Master', so I could get the full names of the players. I also had to use 'having' for the first time here so I could filter down to the players with at least 300 home runs and 300 stolen bases.
+
+```{sql, connection = con}
+SELECT concat(m.nameFirst, " ", m.nameLast) as Player, round(sum(H) * 1.0 / sum(AB), 3) AS Avg
+FROM Batting as b
+JOIN Master as m
+on b.playerID = m.playerID
+GROUP BY b.playerID
+HAVING sum(b.HR) >= 300 AND sum(b.SB) >= 300
+ORDER BY Avg desc
+```
+
+## Problem 8
+
+>List the names of all pitchers who have at least 300 wins (W) and 3000 strikeouts (SO) in their careers and rank them by career winning percentage (W/(W+L)).
+
+This was very similar to the problem above, except I had to switch to switch to the 'Pitching' table here, and I had to calculate the winning percentage.
+
+```{sql, connection = con}
+SELECT concat(m.nameFirst, " ", m.nameLast) as Player, round(sum(p.W)*1.0 / (sum(p.W)+sum(p.L)), 3) AS winningAvg
+FROM Pitching as p
+JOIN Master as m
+on p.playerID = m.playerID
+GROUP BY p.playerID
+HAVING sum(p.W) >= 300 AND sum(p.SO) >= 3000
+ORDER BY winningAvg desc
+```
+
+## Problem 9
+
+>The attainment of either 500 home runs (HR) or 3,000 hits (H) in a career is considered to be among the greatest achievements to which a batter can aspire. These milestones are thought to guarantee induction into the Baseball Hall of Fame, and yet several players who have attained either milestone have not been inducted into the Hall of Fame. Identify them.
+
+I decided to use a method similar to an example in the practice, where I find the players who don't show up in the Hall of Fame table, then I filter to the given requirements.
+
+```{sql, connection = con}
+SELECT concat(m.nameFirst, " ", m.nameLast) as Player
+FROM Batting as b
+JOIN Master as m
+on b.playerID = m.playerID
+LEFT JOIN (SELECT playerID
+            FROM HallOfFame) h ON b.playerID = h.playerID
+WHERE h.playerID is null
+GROUP BY b.playerID
+HAVING (sum(b.HR) >= 500 OR sum(b.H) >= 3000)
+```
+
+## Problem 10
+
+>Based on data from 2012 only, and assuming that transportation to the airport is not an issue, would you rather fly out of JFK, LaGuardia (LGA), or Newark (EWR)? Why or why not?
+
+```{sql, connection = con}
+use airlines;
+```
+
+
+For the sake of variety, let's pull the necessary data directly into R:
+
+```{sql, connection = con, output.var = "flights"}
+SELECT *
+FROM flights
+WHERE year = 2012 and origin in ('JFK', 'LGA', 'EWR');
+```
+
+We will use **dplyr** commands here, since `flights` is an imported object in your R session.
+
+Since I've had many issues with departure delays in my life, I'm going to base this on the average departure delay for each airport. Over last semester's fall break, I actually got stuck in Nebraska over night by myself because of a flight being continuously delayed. Let's look at average departure delays for each of these airports:
+
+```{r}
+flights %>% 
+  group_by(origin) %>% 
+  summarize(mean_dep_delay = mean(dep_delay)) %>% 
+  arrange(mean_dep_delay)
+```
+
+LaGuardia's airport has the lowest average departure delay by a decent margin, so it's probably more reliable to fly out of. If transportation is not an issue, I would fly out of LaGuardia.
+
+
+```{r}
+dbDisconnect(con)
+```
+
+
+
