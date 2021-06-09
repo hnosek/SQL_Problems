@@ -21,7 +21,7 @@ The following problems are drawn from the textbook 'Modern Data Science with R'.
 
 Here we make the connection with the airlines database in Rstudio
 
-```{r, echo = FALSE}
+```{r}
 con <- dbConnect(RMySQL::MySQL(),
                  dbname = "airlines",
                  host = "scidb.smith.edu",
